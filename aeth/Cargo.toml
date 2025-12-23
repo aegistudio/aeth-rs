@@ -1,0 +1,11 @@
+[package]
+name = "aeth"
+version = "0.0.1"
+edition = "2024"
+authors = ["aegistudio (www@aegistudio.net)"]
+license = "MIT"
+homepage = "https://github.com/aegistudio/aeth-rs"
+description = "Rust library for building desktop applications"
+
+[dependencies]
+aeth-event = { path = "../aeth-event", version = "0.0.1" }

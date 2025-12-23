@@ -1,0 +1,15 @@
+[package]
+name = "aeth-event"
+version = "0.0.1"
+edition = "2024"
+authors = ["aegistudio (www@aegistudio.net)"]
+license = "MIT"
+homepage = "https://github.com/aegistudio/aeth-rs"
+description = "Async based event primitives"
+
+[dependencies]
+futures = { version = "0.3.31" }
+indexed-bitmap = { version = "1.0.0" }
+
+[dev-dependencies]
+anyhow = { version = "1.0.100" }
