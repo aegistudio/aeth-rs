@@ -7,7 +7,7 @@ use std::rc::{Rc, Weak};
 use std::task::{Context, Poll, Waker};
 
 /// Readiness event source trait.
-/// 
+///
 /// The caller can check if the event source
 /// is ready by polling the `ready` method,
 /// and register itself for readiness
