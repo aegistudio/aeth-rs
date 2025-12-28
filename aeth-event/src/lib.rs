@@ -32,7 +32,7 @@
 
 #[doc(hidden)]
 pub mod core;
-pub use core::{Handler, AsyncHandlerTrait};
+pub use core::{AsyncHandlerTrait, Handler};
 
 #[doc(hidden)]
 pub mod pubsub;
