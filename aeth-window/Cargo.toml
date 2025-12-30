@@ -1,0 +1,22 @@
+[package]
+name = "aeth-window"
+version = "0.0.1"
+edition = "2024"
+authors = ["aegistudio (www@aegistudio.net)"]
+license = "MIT"
+homepage = "https://github.com/aegistudio/aeth-rs"
+description = "The window subsystem for aeth-rs"
+
+[dependencies]
+winit = { version = "0.31.0-beta.2" }
+aeth-event = { path = "../aeth-event", version = "0.0.2" }
+aeth-task = { path = "../aeth-task", version = "0.0.1" }
+indexed-bitmap = { version = "1.0.0" }
+futures = { version = "0.3.31" }
+
+[dev-dependencies]
+anyhow = { version = "1.0.100" }
+
+[[example]]
+name = "blank"
+path = "examples/blank.rs"

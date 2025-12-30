@@ -145,6 +145,17 @@ where
             bitmap.shrink_to(regs.capacity());
         }
     }
+
+    fn evict(&self, id: usize) -> Option<()> {
+        self.bitmap.borrow_mut().bitset(id, false);
+        let _lock = self.waiter.try_lock()?;
+        self.compact_locked();
+        Some(())
+    }
+
+    fn has_subscriber(&self) -> bool {
+        self.bitmap.borrow().lowest_one().is_some()
+    }
 }
 
 /// Event subscription handle.
@@ -170,14 +181,7 @@ where
     fn drop_option(&mut self) -> Option<()> {
         std::mem::drop(self.handler.take());
         let pub_inner = self.inner.upgrade()?;
-        let mut bitmap = pub_inner.bitmap.borrow_mut();
-        bitmap.bitset(*self.id.as_ref()?.borrow(), false);
-        std::mem::drop(bitmap);
-        let _lock = pub_inner.waiter.try_lock()?;
-        // We compact it now, or let the current lock
-        // holder to compact it.
-        pub_inner.compact_locked();
-        Some(())
+        pub_inner.evict(*self.id.as_ref()?.borrow())
     }
 }
 
@@ -227,6 +231,10 @@ where
         let _lock = self.inner.waiter.lock().await;
         self.inner.publish_locked(e).await;
         self.inner.compact_locked();
+    }
+
+    pub fn has_subscriber(&self) -> bool {
+        self.inner.has_subscriber()
     }
 }
 
