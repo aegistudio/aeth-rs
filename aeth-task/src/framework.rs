@@ -106,11 +106,11 @@ impl ThreadInitializer {
 }
 
 /// Initialized framework handle.
-/// 
+///
 /// This handle is used to control the lifecycle
 /// of the whole system. By dropping it, you
 /// dispose the entire framework.
-/// 
+///
 /// Disposing the framework is required on some
 /// platform such as windows.
 pub struct Framework {
@@ -137,11 +137,9 @@ impl Drop for Framework {
 /// will always return the result of the first
 /// invocation, ignoring the config.
 pub fn initialize(cfg: Config) -> Result<Framework> {
-    SPAWNER.with_borrow(|v| {
-        match v {
-            &Spawner::Uninit => Ok(()),
-            _ => Err(anyhow::anyhow!("Initialized framework in use."))
-        }
+    SPAWNER.with_borrow(|v| match v {
+        &Spawner::Uninit => Ok(()),
+        _ => Err(anyhow::anyhow!("Initialized framework in use.")),
     })?;
 
     let initializer = {

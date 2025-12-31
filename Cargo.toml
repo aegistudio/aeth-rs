@@ -4,4 +4,5 @@ members = [
     "aeth",
     "aeth-event",
     "aeth-task",
+    "aeth-window",
 ]

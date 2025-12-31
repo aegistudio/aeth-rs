@@ -1,4 +1,4 @@
-//! Async based event primitives.
+//! Async-based event primitives.
 //!
 //! This crate builds event primitives on the top
 //! of the async rust language.
