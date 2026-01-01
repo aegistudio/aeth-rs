@@ -1,3 +1,4 @@
+use crate::access_winit_window::AccessWinitWindow;
 use aeth_event::{Pub, Sub, new_pubsub};
 use indexed_bitmap::IndexedBitmap;
 use std::cell::RefCell;
@@ -161,9 +162,35 @@ impl Window {
             .expect("Windows dropped, maybe not inside valid window subsystem context")
     }
 
-    /// Manipulate the underlying `winit::window::Window`
-    /// in an immutable manner.
-    pub fn map_winit_window<F, T>(&self, f: F) -> T
+    /// Set the window as being refreshing or not.
+    ///
+    /// By setting this window as being refreshing,
+    /// every time the event loop is about to sleep,
+    /// a redraw event is going to be queued for
+    /// this window. This is required for video
+    /// applications and games.
+    pub fn set_refreshing(&mut self, enable: bool) {
+        let rc = self.must_upgrade_windows();
+        let mut windows = rc.borrow_mut();
+        windows.set_refreshing(self.id(), enable);
+    }
+
+    /// Check if the window is refreshing or not.
+    pub fn is_refreshing(&self) -> bool {
+        let rc = self.must_upgrade_windows();
+        let windows = rc.borrow_mut();
+        windows.refreshing.bitget(self.id())
+    }
+
+    /// Obtain the window event subscriber dedicated
+    /// to this window.
+    pub fn window_event_sub(&self) -> Sub<WindowEvent> {
+        self.window_event_sub.clone()
+    }
+}
+
+impl AccessWinitWindow for Window {
+    fn map_winit_window<F, T>(&self, f: F) -> T
     where
         F: FnOnce(&Box<dyn WinitWindow>) -> T,
     {
@@ -173,9 +200,7 @@ impl Window {
         f(window)
     }
 
-    /// Manipulate the underlying `winit::window::Window`
-    /// in a mutable manner.
-    pub fn map_winit_window_mut<F, T>(&mut self, f: F) -> T
+    fn map_winit_window_mut<F, T>(&mut self, f: F) -> T
     where
         F: FnOnce(&mut Box<dyn WinitWindow>) -> T,
     {
@@ -190,31 +215,5 @@ impl Window {
         let mut windows = rc.borrow_mut();
         let window = &mut windows.windows[self.id()].window;
         f(window)
-    }
-
-    /// Set the window as being refreshing or not.
-    ///
-    /// By setting this window as being refreshing,
-    /// every time the event loop is about to sleep,
-    /// a redraw event is going to be queued for
-    /// this window. This is required for video
-    /// applications and games.
-    pub fn set_refreshing(&mut self, enable: bool) {
-        let rc = self.must_upgrade_windows();
-        let mut windows = rc.borrow_mut();
-        windows.set_refreshing(self.id(), enable);
-    }
-
-    // Check if the window is refreshing or not.
-    pub fn is_refreshing(&self) -> bool {
-        let rc = self.must_upgrade_windows();
-        let windows = rc.borrow_mut();
-        windows.refreshing.bitget(self.id())
-    }
-
-    /// Obtain the window event subscriber dedicated
-    /// to this window.
-    pub fn window_event_sub(&self) -> Sub<WindowEvent> {
-        self.window_event_sub.clone()
     }
 }

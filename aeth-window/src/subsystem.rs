@@ -5,7 +5,7 @@
 //! most of `aeth::window` users, so it is moved
 //! to a submodule.
 
-use crate::manager::{MANAGER, ManagerInner, WakeUpEvent};
+use crate::manager::{DeviceEvent, MANAGER, ManagerInner, WakeUpEvent};
 use crate::window::Windows;
 use aeth_task::framework::Framework;
 use aeth_task::ready_poll::ReadyPoll;
@@ -15,7 +15,7 @@ use std::process::exit;
 use std::rc::Rc;
 use winit::application::ApplicationHandler;
 use winit::error::EventLoopError;
-use winit::event::WindowEvent;
+use winit::event::{DeviceEvent as WinitDeviceEvent, DeviceId, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::WindowId;
 
@@ -94,10 +94,7 @@ impl Subsystem {
             .find_inner_by_window_id(window_id)?
             .window_event_pub();
         if window_event_pub.has_subscriber() {
-            #[rustfmt::skip]
-            foreground::spawn(async move {
-                window_event_pub.publish(event).await
-            }).detach();
+            foreground::spawn(window_event_pub.take_publish(event)).detach();
         }
         self.run(event_loop);
         Some(())
@@ -109,13 +106,25 @@ impl Subsystem {
         Some(())
     }
 
-    fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) -> Option<()> {
+    fn proxy_wake_up_option(&mut self, event_loop: &dyn ActiveEventLoop) -> Option<()> {
         let wakeup_event_pub = self.inner.as_ref()?.manager.wakeup_event_pub();
         if wakeup_event_pub.has_subscriber() {
-            #[rustfmt::skip]
-            foreground::spawn(async move {
-                wakeup_event_pub.publish(WakeUpEvent).await
-            }).detach();
+            foreground::spawn(wakeup_event_pub.take_publish(WakeUpEvent)).detach();
+        }
+        self.run(event_loop);
+        Some(())
+    }
+
+    fn device_event_option(
+        &mut self,
+        event_loop: &dyn ActiveEventLoop,
+        device_id: Option<DeviceId>,
+        event: WinitDeviceEvent,
+    ) -> Option<()> {
+        let device_event_pub = self.inner.as_ref()?.manager.device_event_pub();
+        if device_event_pub.has_subscriber() {
+            let event = DeviceEvent { event, device_id };
+            foreground::spawn(device_event_pub.take_publish(event)).detach();
         }
         self.run(event_loop);
         Some(())
@@ -141,7 +150,16 @@ impl ApplicationHandler for Subsystem {
     }
 
     fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {
-        self.proxy_wake_up(event_loop);
+        self.proxy_wake_up_option(event_loop);
+    }
+
+    fn device_event(
+        &mut self,
+        event_loop: &dyn ActiveEventLoop,
+        device_id: Option<DeviceId>,
+        event: WinitDeviceEvent,
+    ) {
+        self.device_event_option(event_loop, device_id, event);
     }
 }
 
