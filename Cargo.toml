@@ -5,4 +5,5 @@ members = [
     "aeth-event",
     "aeth-task",
     "aeth-window",
+    "aeth-window/macros",
 ]

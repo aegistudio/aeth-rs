@@ -233,6 +233,10 @@ where
         self.inner.compact_locked();
     }
 
+    pub async fn take_publish(self, e: E) {
+        self.publish(e).await
+    }
+
     pub fn has_subscriber(&self) -> bool {
         self.inner.has_subscriber()
     }
