@@ -1,15 +1,16 @@
 [package]
 name = "examples"
 version = "0.0.0"
-edition = "2024"
-authors = ["aegistudio (www@aegistudio.net)"]
-license = "MIT"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
 publish = false
 
 [dev-dependencies]
-aeth = { version = "0.0.4", path = "../aeth" }
-anyhow = { version = "1.0.100" }
-winit = { version = "0.31.0-beta.2" }
+aeth.workspace = true
+anyhow.workspace = true
+winit.workspace = true
 
 [[example]]
 name = "blank"

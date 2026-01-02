@@ -1,18 +1,18 @@
 [package]
 name = "aeth-window"
-version = "0.0.2"
-edition = "2024"
-authors = ["aegistudio (www@aegistudio.net)"]
-license = "MIT"
-homepage = "https://github.com/aegistudio/aeth-rs"
 description = "The window subsystem for aeth-rs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
 
 [dependencies]
-winit = { version = "0.31.0-beta.2" }
-aeth-event = { path = "../aeth-event", version = "0.0.3" }
-aeth-task = { path = "../aeth-task", version = "0.0.1" }
-aeth-window-macros = { path = "./macros", version = "0.0.2" }
-indexed-bitmap = { version = "1.0.0" }
-futures = { version = "0.3.31" }
+winit.workspace = true
+aeth-event.workspace = true
+aeth-task.workspace = true
+aeth-window-macros = { path = "./macros" }
+indexed-bitmap.workspace = true
+futures.workspace = true
 
 [dev-dependencies]
