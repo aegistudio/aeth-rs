@@ -1,16 +1,16 @@
 [package]
 name = "aeth-entry"
-version = "0.0.1"
-edition = "2024"
-authors = ["aegistudio (www@aegistudio.net)"]
-license = "MIT"
-homepage = "https://github.com/aegistudio/aeth-rs"
 description = "Intended entrypoint for aeth-rs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
 
 [dependencies]
-aeth-task = { path = "../aeth-task", version = "0.0.1" }
-aeth-window = { path = "../aeth-window", version = "0.0.2" }
-aeth-entry-macros = { path = "./macros", version = "0.0.1" }
-anyhow = { version = "1.0.100" }
+aeth-task.workspace = true
+aeth-window.workspace = true
+aeth-entry-macros = { path = "./macros" }
+anyhow.workspace = true
 
 [dev-dependencies]
