@@ -21,11 +21,11 @@ version = "0.0.4"
 
 [workspace.dependencies]
 # Submodule Cross-Referencing
-aeth = { path = "aeth" }
-aeth-event = { path = "aeth-event" }
-aeth-task = { path = "aeth-task" }
-aeth-window = { path = "aeth-window" }
-aeth-entry = { path = "aeth-entry" }
+aeth = { version = "=0.0.4", path = "aeth" }
+aeth-event = { version = "=0.0.4", path = "aeth-event" }
+aeth-task = { version = "=0.0.4", path = "aeth-task" }
+aeth-window = { version = "=0.0.4", path = "aeth-window" }
+aeth-entry = { version = "=0.0.4", path = "aeth-entry" }
 
 # Utility Libraries
 indexed-bitmap = { version = "1.0.0" }
