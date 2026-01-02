@@ -10,7 +10,7 @@ authors.workspace = true
 [dependencies]
 aeth-task.workspace = true
 aeth-window.workspace = true
-aeth-entry-macros = { path = "./macros" }
+aeth-entry-macros.workspace = true
 anyhow.workspace = true
 
 [dev-dependencies]

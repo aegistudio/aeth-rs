@@ -11,7 +11,7 @@ authors.workspace = true
 winit.workspace = true
 aeth-event.workspace = true
 aeth-task.workspace = true
-aeth-window-macros = { path = "./macros" }
+aeth-window-macros.workspace = true
 indexed-bitmap.workspace = true
 futures.workspace = true
 
