@@ -6,4 +6,8 @@ members = [
     "aeth-task",
     "aeth-window",
     "aeth-window/macros",
+    "aeth-entry",
+    "aeth-entry/macros",
+
+    "examples",
 ]

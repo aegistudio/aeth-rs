@@ -1,0 +1,16 @@
+[package]
+name = "examples"
+version = "0.0.0"
+edition = "2024"
+authors = ["aegistudio (www@aegistudio.net)"]
+license = "MIT"
+publish = false
+
+[dev-dependencies]
+aeth = { version = "0.0.4", path = "../aeth" }
+anyhow = { version = "1.0.100" }
+winit = { version = "0.31.0-beta.2" }
+
+[[example]]
+name = "blank"
+path = "blank.rs"

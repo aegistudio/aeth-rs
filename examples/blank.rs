@@ -1,15 +1,14 @@
-use aeth_event::Chan;
-use aeth_task::ready_poll::local_ready_poll;
-use aeth_task::{Handle, framework, spawn_foreground};
-use aeth_window::AccessWinitActiveEventLoopExt;
-use aeth_window::AccessWinitWindowExt;
+use aeth::event::Chan;
+use aeth::window::AccessWinitActiveEventLoopExt;
+use aeth::window::AccessWinitWindowExt;
 use anyhow::Result;
 use winit::event::WindowEvent;
 use winit::event_loop::ControlFlow;
 use winit::window::WindowAttributes;
 
-async fn async_main() -> Result<()> {
-    let manager = aeth_window::manager().await;
+#[aeth::main]
+async fn main() -> Result<()> {
+    let manager = aeth::window::manager().await;
     manager.set_control_flow(ControlFlow::Wait).await;
     let mut window_attrs = WindowAttributes::default();
     window_attrs.title = "Blank Window".to_string();
@@ -37,15 +36,4 @@ async fn async_main() -> Result<()> {
             _ => {}
         }
     }
-}
-
-fn main() -> Result<()> {
-    let taskfx_cfg = framework::Config::default();
-    let taskfx = framework::initialize(taskfx_cfg)?;
-
-    let (main, poll) = local_ready_poll(async_main());
-    spawn_foreground(main).detach();
-
-    aeth_window::subsystem::run(taskfx, poll)?;
-    Ok(())
 }

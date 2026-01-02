@@ -1,18 +1,20 @@
 [package]
-name = "aeth-window-macros"
-version = "0.0.2"
+name = "aeth-entry-macros"
+version = "0.0.1"
 edition = "2024"
 authors = ["aegistudio (www@aegistudio.net)"]
 license = "MIT"
 homepage = "https://github.com/aegistudio/aeth-rs"
-description = "The procedural macros for aeth-window"
+description = "The procedural macros for aeth-entry"
 
 [lib]
 proc-macro = true
 
 [dependencies]
-proc-macro2 = "1.0.60"
-quote = "1.0"
+anyhow = { version = "1.0.100" }
+proc-macro2 = { version = "1.0.60" }
+proc-macro-crate = { version = "3.4.0" }
+quote = { version = "1.0" }
 syn = { version = "2.0.52", features = ["full"] }
 
 [dev-dependencies]

@@ -1,14 +1,16 @@
 [package]
-name = "aeth"
-version = "0.0.4"
+name = "aeth-entry"
+version = "0.0.1"
 edition = "2024"
 authors = ["aegistudio (www@aegistudio.net)"]
 license = "MIT"
 homepage = "https://github.com/aegistudio/aeth-rs"
-description = "Rust library for building UI applications"
+description = "Intended entrypoint for aeth-rs"
 
 [dependencies]
-aeth-event = { path = "../aeth-event", version = "0.0.3" }
 aeth-task = { path = "../aeth-task", version = "0.0.1" }
 aeth-window = { path = "../aeth-window", version = "0.0.2" }
-aeth-entry = { path = "../aeth-entry", version = "0.0.1" }
+aeth-entry-macros = { path = "./macros", version = "0.0.1" }
+anyhow = { version = "1.0.100" }
+
+[dev-dependencies]
