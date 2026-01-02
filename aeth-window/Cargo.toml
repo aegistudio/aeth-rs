@@ -16,8 +16,3 @@ indexed-bitmap = { version = "1.0.0" }
 futures = { version = "0.3.31" }
 
 [dev-dependencies]
-anyhow = { version = "1.0.100" }
-
-[[example]]
-name = "blank"
-path = "examples/blank.rs"
