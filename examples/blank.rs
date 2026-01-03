@@ -1,4 +1,4 @@
-use aeth::event::Chan;
+use aeth::event::prelude::*;
 use aeth::window::AccessWinitActiveEventLoopExt;
 use aeth::window::AccessWinitWindowExt;
 use anyhow::Result;
@@ -24,10 +24,8 @@ async fn main() -> Result<()> {
         .len()
         > 0;
     window.set_refreshing(refreshing);
-    let window_event_sub = window.window_event_sub();
-    let mut window_event_ch = Chan::new();
-    let _sub = window_event_ch.connect(window_event_sub).await;
 
+    let mut window_event_ch = window.window_event_sub().chan().await;
     loop {
         let event = window_event_ch.recv().await;
         println!("Receiving window event: {event:?}");

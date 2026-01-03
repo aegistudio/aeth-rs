@@ -31,12 +31,18 @@
 //! single-threaded context.
 
 #[doc(hidden)]
-pub mod core;
-pub use core::{AsyncHandlerTrait, Handler};
+pub mod handler;
+pub use handler::Handler;
 
 #[doc(hidden)]
 pub mod pubsub;
-pub use pubsub::{Ledge, Pub, Sub, new_pubsub};
+#[rustfmt::skip]
+pub use pubsub::{
+    Publisher, Subscriber,
+    Ledge, Pub, Sub, new_pubsub,
+};
+
+pub mod filter;
 
 #[doc(hidden)]
 pub mod mux;
@@ -44,7 +50,33 @@ pub use mux::{Mux, MuxPollFuture, Muxing, ReadyWait};
 
 #[doc(hidden)]
 pub mod chan;
-pub use chan::Chan;
+pub use chan::{Chan, Channel, WaitChan, WaitChannel, Waiting};
+
+#[doc(hidden)]
+pub mod pubsub_ext;
+#[rustfmt::skip]
+pub use pubsub_ext::{
+    PublisherDyn, SubscriberDyn,
+    PublisherExt, SubscriberExt,
+};
+
+pub mod prelude {
+    //! Prelude to making life easy for
+    //! [this module](crate) users.
+    //!
+    //! The prelude will import the traits to make the
+    //! trait methods visible to the rust compiler, and
+    //! then clobber them immediately. Therefore, user
+    //! must explicitly import the type they need.
+    pub use crate::Channel as _;
+    pub use crate::Publisher as _;
+    pub use crate::PublisherDyn as _;
+    pub use crate::PublisherExt as _;
+    pub use crate::Subscriber as _;
+    pub use crate::SubscriberDyn as _;
+    pub use crate::SubscriberExt as _;
+    pub use crate::WaitChannel as _;
+}
 
 #[doc(hidden)]
 #[cfg(test)]
