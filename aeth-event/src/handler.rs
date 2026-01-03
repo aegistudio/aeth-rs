@@ -1,16 +1,16 @@
 use futures::future::LocalBoxFuture;
 
-/// AsyncHandlerTrait that is dyn-compatible.
+/// Async handler trait that is dyn-compatible.
 ///
 /// The original AsyncFn(E) is not dyn-compatible,
 /// but the event framework requires to dynamically
 /// dispatch events to the handlers, so we must pay
 /// the price of boxing the futures.
-pub trait AsyncHandlerTrait<E> {
+pub trait AsyncHandlerDyn<E> {
     fn call_mut_boxed(&mut self, e: E) -> LocalBoxFuture<'_, ()>;
 }
 
-impl<E, F> AsyncHandlerTrait<E> for F
+impl<E, F> AsyncHandlerDyn<E> for F
 where
     F: AsyncFnMut(E),
     E: Clone + 'static,
@@ -25,7 +25,7 @@ where
 /// Handler for dynamically dispatching events.
 pub enum Handler<E> {
     Sync(Box<dyn FnMut(E)>),
-    Async(Box<dyn AsyncHandlerTrait<E>>),
+    Async(Box<dyn AsyncHandlerDyn<E>>),
 }
 
 impl<E> Handler<E>
@@ -67,7 +67,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::core::Handler;
+    use crate::handler::Handler;
     #[test]
     fn test_define() {
         let _ = Handler::new_sync(move |v: usize| {

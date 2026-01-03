@@ -1,8 +1,63 @@
-use crate::core::Handler;
+use crate::handler::Handler;
 use futures::lock::Mutex;
 use indexed_bitmap::IndexedBitmap;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
+
+/// Event publisher trait.
+///
+/// We introduce this trait to generalize the
+/// publishing behavior of base publisher
+/// [`crate::Pub`] and its adapters, and
+/// introduce a point of type-recursion
+/// `impl Publisher<E>`.
+#[allow(async_fn_in_trait)]
+pub trait Publisher<E>: Clone + 'static {
+    /// Publish an event.
+    async fn publish(&self, e: E);
+
+    /// Take the ownership of self and
+    /// publish an event.
+    async fn take_publish(self, e: E) {
+        self.publish(e).await
+    }
+
+    /// Check if there're subscribers.
+    ///
+    /// This is usually used from outside
+    /// the async runtime to decide whether
+    /// to spawn a publishing task (since
+    /// the event publishing must be done
+    /// in async manner).
+    ///
+    /// The null behaviour of this method
+    /// is to return true, since it's always
+    /// correct to spawn a publishing task.
+    fn has_subscriber(&self) -> bool {
+        true
+    }
+}
+
+/// Event subscriber trait.
+///
+/// We introduce this trait to generalize the
+/// publishing behavior of base subscriber
+/// [`crate::Sub`] and its adapters, and
+/// introduce a point of type-recurson
+/// `impl Subscriber<E>`.
+#[allow(async_fn_in_trait)]
+pub trait Subscriber<E>: Clone + 'static {
+    /// The event subscription.
+    ///
+    /// Dropping the subscription object
+    /// is equivalent to unsubscribing from
+    /// the event source.
+    type Subscription: 'static;
+
+    /// Subscribe an event source.
+    #[must_use = "Unsubscribe when Subscription is dropped."]
+    async fn subscribe(&self, handler: Handler<E>) -> Self::Subscription;
+}
 
 struct Registry<E>
 where
@@ -233,12 +288,21 @@ where
         self.inner.compact_locked();
     }
 
-    pub async fn take_publish(self, e: E) {
-        self.publish(e).await
-    }
-
     pub fn has_subscriber(&self) -> bool {
         self.inner.has_subscriber()
+    }
+}
+
+impl<E> Publisher<E> for Pub<E>
+where
+    E: Clone + 'static,
+{
+    async fn publish(&self, e: E) {
+        Pub::publish(self, e).await
+    }
+
+    fn has_subscriber(&self) -> bool {
+        Pub::has_subscriber(self)
     }
 }
 
@@ -274,6 +338,17 @@ where
     }
 }
 
+impl<E> Subscriber<E> for Sub<E>
+where
+    E: Clone + 'static,
+{
+    type Subscription = Ledge<E>;
+
+    async fn subscribe(&self, handler: Handler<E>) -> Self::Subscription {
+        Sub::subscribe(self, handler).await
+    }
+}
+
 /// Create a publisher and subscriber for the
 /// specified event.
 ///
@@ -290,7 +365,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::core::Handler;
+    use crate::handler::Handler;
     use crate::pubsub::*;
     use crate::testutil::TestFixture;
     use anyhow::Result;
