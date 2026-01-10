@@ -12,10 +12,17 @@ use std::task::{Context, Poll, Waker};
 /// is ready by polling the `ready` method,
 /// and register itself for readiness
 /// notification by `waiter().subscribe` method.
+///
+/// The `notify_subscribed` method is guaranteed
+/// to call after `waiter().subscribe` is called,
+/// the event source may regard this as a timing
+/// information for producing events.
 pub trait ReadyWait {
     fn ready(&self) -> bool;
 
     fn waiter(&self) -> Sub<()>;
+
+    fn notify_subscribed(&self) {}
 }
 
 struct Registry<V>
@@ -71,16 +78,13 @@ where
         let slot = inner.regs.len();
         let waiter = wait.waiter();
         let id = Rc::new(RefCell::new(slot));
-        let ready = wait.ready();
         inner.regs.push(Registry {
             wait: wait,
             value: value,
             id: id.clone(),
         });
-        if ready {
-            inner.notify(slot);
-        }
         std::mem::drop(inner);
+
         // Must borrow weak, otherwise the Muxing owner will
         // prolong the Inner even after Mux is destroyed.
         let notify_weak = Rc::downgrade(&rc);
@@ -97,6 +101,22 @@ where
                 Some(())
             }))
             .await;
+
+        // XXX: If the event source has been ready, or in case of
+        // Pub<()>.publish happening before Sub<()>.subscribe,
+        // we should check the readiness and set the bit.
+        let mut inner = rc.borrow_mut();
+        // XXX: It's possible that some muxing entry are
+        // destroyed after returning from the async
+        // subscription above, so we have to refresh the
+        // slot, where id stores it safely.
+        let slot = *id.borrow();
+        let wait = &inner.regs[slot].wait;
+        wait.notify_subscribed();
+        if wait.ready() {
+            inner.notify(slot);
+        }
+        std::mem::drop(inner);
         Muxing {
             inner: Rc::downgrade(&rc),
             id: id,

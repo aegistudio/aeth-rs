@@ -1,14 +1,53 @@
 use crate::mux::ReadyWait;
 use crate::pubsub::{Pub, Sub};
-use crate::{Handler, Ledge, new_pubsub};
+use crate::{Handler, Subscriber, new_pubsub};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
+use futures::channel::oneshot::Sender as OneshotSender;
+use futures::channel::oneshot::channel as oneshot;
 use futures::{SinkExt, StreamExt};
 use std::cell::RefCell;
+use std::ops::{Deref, DerefMut};
 use std::rc::{Rc, Weak};
+
+/// Event channel trait.
+///
+/// This trait generalizes the the
+/// receiving behavior of base channel
+/// [`crate::Chan`] and its adapters.
+#[allow(async_fn_in_trait)]
+pub trait Channel<E>
+where
+    E: Clone + 'static,
+{
+    /// Receive the event.
+    async fn recv(&mut self) -> E;
+
+    /// Fetch the ready waiter.
+    fn ready_wait(&self) -> Box<dyn ReadyWait>;
+}
+
+/// Event channel with back-pressure trait.
+///
+/// This trait generalizes the the
+/// receiving behavior of base channel
+/// [`crate::WaitChan`] and its adapters.
+#[allow(async_fn_in_trait)]
+pub trait WaitChannel<E>
+where
+    E: Clone + 'static,
+{
+    type Waiting: Deref<Target = E> + DerefMut + 'static;
+
+    /// Receive the event with guard.
+    async fn recv(&mut self) -> Self::Waiting;
+
+    /// Fetch the ready waiter.
+    fn ready_wait(&self) -> Box<dyn ReadyWait>;
+}
 
 struct Inner<E>
 where
-    E: Clone + 'static,
+    E: 'static,
 {
     _send: UnboundedSender<E>,
     recv: UnboundedReceiver<E>,
@@ -17,7 +56,7 @@ where
 
 impl<E> Inner<E>
 where
-    E: Clone + 'static,
+    E: 'static,
 {
     fn try_move_head(&mut self) -> Option<()> {
         let polled = self.recv.try_next().ok()?;
@@ -46,7 +85,7 @@ where
 
 struct InnerReadyWait<E>
 where
-    E: Clone + 'static,
+    E: 'static,
 {
     rc: Weak<RefCell<Inner<E>>>,
     sub: Sub<()>,
@@ -54,7 +93,7 @@ where
 
 impl<E> ReadyWait for InnerReadyWait<E>
 where
-    E: Clone + 'static,
+    E: 'static,
 {
     fn ready(&self) -> bool {
         self.rc
@@ -68,14 +107,9 @@ where
     }
 }
 
-/// Event channel.
-///
-/// This object recovers the event handling logic into a
-/// channel polling logic. Now we do event processing in
-/// rust async language.
-pub struct Chan<E>
+struct ChanBase<E>
 where
-    E: Clone + 'static,
+    E: 'static,
 {
     inner: Rc<RefCell<Inner<E>>>,
     sender: UnboundedSender<E>,
@@ -83,9 +117,9 @@ where
     ready_sub: Sub<()>,
 }
 
-impl<E> Chan<E>
+impl<E> ChanBase<E>
 where
-    E: Clone + 'static,
+    E: 'static,
 {
     pub fn new() -> Self {
         let (ready_pub, ready_sub) = new_pubsub();
@@ -113,17 +147,168 @@ where
     pub async fn recv(&mut self) -> E {
         self.inner.borrow_mut().recv().await
     }
+}
 
-    #[must_use = "Unregister when Ledge is dropped."]
-    pub async fn connect(&mut self, sub: Sub<E>) -> Ledge<E> {
-        let mut sender = self.sender.clone();
-        let ready_pub = self.ready_pub.clone();
+/// Event channel.
+///
+/// This object recovers the event handling logic into a
+/// channel polling logic. Now we do event processing in
+/// rust async language.
+pub struct Chan<E>
+where
+    E: Clone + 'static,
+{
+    base: ChanBase<E>,
+}
+
+impl<E> Chan<E>
+where
+    E: Clone + 'static,
+{
+    pub fn new() -> Self {
+        Self {
+            base: ChanBase::new(),
+        }
+    }
+
+    pub fn ready_wait(&self) -> Box<dyn ReadyWait> {
+        self.base.ready_wait()
+    }
+
+    pub async fn recv(&mut self) -> E {
+        self.base.recv().await
+    }
+
+    #[must_use = "Unregister when Subscription is dropped."]
+    pub async fn connect<S: Subscriber<E>>(&mut self, sub: S) -> S::Subscription {
+        let mut sender = self.base.sender.clone();
+        let ready_pub = self.base.ready_pub.clone();
         sub.subscribe(Handler::new_async_option(async move |item| {
             sender.send(item).await.ok()?;
             ready_pub.publish(()).await;
             Some(())
         }))
         .await
+    }
+}
+
+impl<E> Channel<E> for Chan<E>
+where
+    E: Clone + 'static,
+{
+    async fn recv(&mut self) -> E {
+        Chan::recv(self).await
+    }
+
+    fn ready_wait(&self) -> Box<dyn ReadyWait> {
+        Chan::ready_wait(self)
+    }
+}
+
+/// Back-pressure guarded event.
+///
+/// This is returned [`crate::WaitChan::recv`],
+/// for blocking the event publisher until
+/// the back-pressure guard is dropped.
+pub struct Waiting<E>
+where
+    E: Clone + 'static,
+{
+    event: E,
+    done: Option<OneshotSender<()>>,
+}
+
+impl<E> Drop for Waiting<E>
+where
+    E: Clone + 'static,
+{
+    fn drop(&mut self) {
+        let _ = self.done.take().unwrap().send(());
+    }
+}
+
+impl<E> Deref for Waiting<E>
+where
+    E: Clone + 'static,
+{
+    type Target = E;
+
+    fn deref(&self) -> &Self::Target {
+        &self.event
+    }
+}
+
+impl<E> DerefMut for Waiting<E>
+where
+    E: Clone + 'static,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.event
+    }
+}
+
+/// Event channel with back-pressure.
+///
+/// It's totally like [`crate::Chan`],
+/// except for events being protected in
+/// [`crate::Waiting`] barriers, which will
+/// block the publisher until it's dropped.
+pub struct WaitChan<E>
+where
+    E: Clone + 'static,
+{
+    base: ChanBase<Waiting<E>>,
+}
+
+impl<E> WaitChan<E>
+where
+    E: Clone + 'static,
+{
+    pub fn new() -> Self {
+        Self {
+            base: ChanBase::new(),
+        }
+    }
+
+    pub fn ready_wait(&self) -> Box<dyn ReadyWait> {
+        self.base.ready_wait()
+    }
+
+    pub async fn recv(&mut self) -> Waiting<E> {
+        self.base.recv().await
+    }
+
+    #[must_use = "Unregister when Subscription is dropped."]
+    pub async fn connect<S: Subscriber<E>>(&mut self, sub: S) -> S::Subscription {
+        let mut sender = self.base.sender.clone();
+        let ready_pub = self.base.ready_pub.clone();
+        sub.subscribe(Handler::new_async_option(async move |event| {
+            let (waiting_pub, waiting_sub) = oneshot();
+            let item = Waiting {
+                event,
+                done: Some(waiting_pub),
+            };
+            sender.send(item).await.ok()?;
+            ready_pub.publish(()).await;
+            let _ = waiting_sub.await;
+            Some(())
+        }))
+        .await
+    }
+}
+
+impl<E> WaitChannel<E> for WaitChan<E>
+where
+    E: Clone + 'static,
+{
+    type Waiting = Waiting<E>;
+
+    async fn recv(&mut self) -> Waiting<E> {
+        WaitChan::recv(self).await
+    }
+
+    fn ready_wait(&self) -> Box<dyn ReadyWait> {
+        WaitChan::ready_wait(self)
     }
 }
 

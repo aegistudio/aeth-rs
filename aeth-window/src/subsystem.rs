@@ -7,6 +7,7 @@
 
 use crate::manager::{DeviceEvent, MANAGER, ManagerInner, WakeUpEvent};
 use crate::window::Windows;
+use aeth_event::prelude::*;
 use aeth_task::framework::Framework;
 use aeth_task::ready_poll::ReadyPoll;
 use aeth_task::{Handle, drain_foreground_loopback, foreground, run_foreground};
