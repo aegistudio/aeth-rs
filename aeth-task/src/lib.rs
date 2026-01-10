@@ -57,13 +57,13 @@ pub mod foreground {
     //! to a foreground thread to directly write
     //! `use aeth::task::foreground`, and then
     //! `foreground::spawn` or `foreground::dispatch`.
-    pub use super::dispatch_background as dispatch;
-    pub use super::spawn_foreground as spawn;
+    pub use crate::dispatch_background as dispatch;
+    pub use crate::spawn_foreground as spawn;
 
     /// Assert current thread is a foreground thread.
     pub fn assert() {
         assert!(
-            super::current_type() == super::Type::Foreground,
+            crate::current_type() == crate::Type::Foreground,
             "Not running on a foreground thread.",
         );
     }
@@ -76,13 +76,13 @@ pub mod background {
     //! to background threads to directly write
     //! `use aeth::task::background`, and then
     //! `background::spawn` or `background::loopback`.
-    pub use super::dispatch_background as spawn;
-    pub use super::dispatch_foreground as loopback;
+    pub use crate::dispatch_background as spawn;
+    pub use crate::dispatch_foreground as loopback;
 
     /// Assert current thread is a background thread.
     pub fn assert() {
         assert!(
-            super::current_type() == super::Type::Background,
+            crate::current_type() == crate::Type::Background,
             "Not running on a background thread.",
         );
     }
@@ -91,6 +91,9 @@ pub mod background {
 pub mod framework;
 
 pub mod ready_poll;
+
+#[cfg(feature = "future-ready-wait")]
+pub mod ready_wait;
 
 #[cfg(test)]
 mod test;
