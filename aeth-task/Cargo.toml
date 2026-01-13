@@ -14,5 +14,7 @@ tokio.workspace = true
 core_affinity.workspace = true
 thread-priority.workspace = true
 rand.workspace = true
+lives.workspace = true
+aeth-event.workspace = true
 
 [dev-dependencies]

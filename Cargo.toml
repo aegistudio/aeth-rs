@@ -33,6 +33,7 @@ aeth-entry-macros  = { version = "=0.0.5", path = "aeth-entry/macros"}
 indexed-bitmap = { version = "1.0.0" }
 anyhow = { version = "1.0.100" }
 rand = { version = "0.9.2" }
+lives = { version = "0.1.2" }
 
 # Async Frameworks
 futures = { version = "0.3.31" }

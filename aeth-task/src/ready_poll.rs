@@ -1,4 +1,4 @@
-//! Make futures to be ready-pollable.
+//! Make futures ready-pollable.
 //!
 //! This is suitable for the user who wants to
 //! know whether a future has been polled to
@@ -148,7 +148,7 @@ impl<'a, T> Future for LocalReadyPollFuture<'a, T> {
     }
 }
 
-/// Wraps the local future to be ready pollable.
+/// Wraps the local future to be ready-pollable.
 ///
 /// This is the local version of the `ready_poll`
 /// counterpart. You will need this when your

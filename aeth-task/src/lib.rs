@@ -92,5 +92,7 @@ pub mod framework;
 
 pub mod ready_poll;
 
+pub mod ready_wait;
+
 #[cfg(test)]
 mod test;
