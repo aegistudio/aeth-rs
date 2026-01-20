@@ -1,11 +1,11 @@
-use crate::chan::{Chan, Channel};
-use crate::chan::{WaitChan, WaitChannel, Waiting};
+use crate::chan::{Chan, Channel, WaitChan, WaitChannel};
 use crate::filter::{FilterPub, FilterSub};
 use crate::handler::Handler;
 use crate::pubsub::{Publisher, Subscriber};
 use futures::future::LocalBoxFuture;
 use std::cell::RefCell;
 use std::marker::PhantomData;
+use std::task::{Context, Poll};
 
 /// Event publisher trait that is dyn-compatible.
 ///
@@ -188,7 +188,7 @@ where
 struct ChanLedge<E, S>
 where
     E: Clone + 'static,
-    S: 'static,
+    S: Unpin + 'static,
 {
     chan: Chan<E>,
     _subscription: S,
@@ -197,21 +197,17 @@ where
 impl<E, S> Channel<E> for ChanLedge<E, S>
 where
     E: Clone + 'static,
-    S: 'static,
+    S: Unpin + 'static,
 {
-    async fn recv(&mut self) -> E {
-        self.chan.recv().await
-    }
-
-    fn ready_wait(&self) -> Box<dyn crate::ReadyWait> {
-        self.chan.ready_wait()
+    fn poll_next_event(&mut self, cx: &mut Context<'_>) -> Poll<E> {
+        self.chan.poll_next_event(cx)
     }
 }
 
 struct WaitChanLedge<E, S>
 where
     E: Clone + 'static,
-    S: 'static,
+    S: Unpin + 'static,
 {
     wait_chan: WaitChan<E>,
     _subscription: S,
@@ -220,16 +216,12 @@ where
 impl<E, S> WaitChannel<E> for WaitChanLedge<E, S>
 where
     E: Clone + 'static,
-    S: 'static,
+    S: Unpin + 'static,
 {
-    type Waiting = Waiting<E>;
+    type Waiting = <WaitChan<E> as WaitChannel<E>>::Waiting;
 
-    async fn recv(&mut self) -> Self::Waiting {
-        self.wait_chan.recv().await
-    }
-
-    fn ready_wait(&self) -> Box<dyn crate::ReadyWait> {
-        self.wait_chan.ready_wait()
+    fn poll_next_event(&mut self, cx: &mut Context<'_>) -> Poll<Self::Waiting> {
+        self.wait_chan.poll_next_event(cx)
     }
 }
 

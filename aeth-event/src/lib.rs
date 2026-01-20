@@ -3,29 +3,25 @@
 //! This crate builds event primitives on the top
 //! of the async rust language.
 //!
-//! On the bottom, the `Handler`, `Pub`, `Sub`
-//! and `Ledge` builds up a conventional eventing
+//! On the bottom, the [`Handler`], [`Pub`], [`Sub`]
+//! and [`Ledge`] builds up a classical eventing
 //! system, but is now async compatible.
 //!
 //! On the top of them, there're two ways of
 //! viewing the event processing:
 //!
 //! - Horizontally, we can gather the events from
-//!   different sources (represented by `Sub`)
-//!   into a single queue / channel, the `Chan`.
+//!   different sources (represented by [`Sub`])
+//!   into a single queue / channel, the [`Chan`].
 //!   So that we just need to poll a single
 //!   channel in order to get notified by multiple
 //!   sources. This also recovers the event handling
 //!   logic to channel receiving logic.
-//! - Vertically, we can multiplex different
-//!   sources by their ready states (represented
-//!   by `ReadyWait`), and discriminate them by
-//!   associating them with pre-defined values.
-//!   So that we just need to poll a single
-//!   multiplexer `Mux` to see which source is
-//!   ready. This also recovers the event handling
-//!   logic to futures selecting logic, but our
-//!   version is dynamic and persistent.
+//! - Vertically, with the help of [`aeth_mux::Mux`],
+//!   we can multiplex these channels [`Chan`],
+//!   and discriminate them by associating them
+//!   with a pre-defined key, using
+//!   [`MuxChanExt::mux_chan`].
 //!
 //! The crates assert the eventing happens in a
 //! single-threaded context.
@@ -44,13 +40,14 @@ pub use pubsub::{
 
 pub mod filter;
 
-#[doc(hidden)]
-pub mod mux;
-pub use mux::{Mux, MuxPollFuture, Muxing, ReadyWait};
-
-#[doc(hidden)]
 pub mod chan;
-pub use chan::{Chan, Channel, WaitChan, WaitChannel, Waiting};
+#[doc(inline)]
+#[rustfmt::skip]
+pub use chan::{
+    Chan, Channel, ChannelExt,
+    WaitChan, WaitChannel, WaitChannelExt, Waiting,
+    MuxChanExt,
+};
 
 #[doc(hidden)]
 pub mod pubsub_ext;
@@ -69,6 +66,8 @@ pub mod prelude {
     //! then clobber them immediately. Therefore, user
     //! must explicitly import the type they need.
     pub use crate::Channel as _;
+    pub use crate::ChannelExt as _;
+    pub use crate::MuxChanExt as _;
     pub use crate::Publisher as _;
     pub use crate::PublisherDyn as _;
     pub use crate::PublisherExt as _;
@@ -76,6 +75,7 @@ pub mod prelude {
     pub use crate::SubscriberDyn as _;
     pub use crate::SubscriberExt as _;
     pub use crate::WaitChannel as _;
+    pub use crate::WaitChannelExt as _;
 }
 
 #[doc(hidden)]

@@ -1,6 +1,6 @@
 [package]
-name = "aeth-event"
-description = "Async based event primitives"
+name = "aeth-mux"
+description = "Async multiplexer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,9 +9,5 @@ authors.workspace = true
 
 [dependencies]
 futures.workspace = true
-pin-project-lite.workspace = true
-indexed-bitmap.workspace = true
-aeth-mux.workspace = true
 
 [dev-dependencies]
-anyhow.workspace = true

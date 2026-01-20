@@ -52,7 +52,14 @@ pub trait Subscriber<E>: Clone + 'static {
     /// Dropping the subscription object
     /// is equivalent to unsubscribing from
     /// the event source.
-    type Subscription: 'static;
+    ///
+    /// The subscription is forced to be
+    /// [`Unpin`] for convenience, since
+    /// all subscription implemented by
+    /// this crate is unpin. Custom
+    /// implementors must resolve the
+    /// pinning issue internally.
+    type Subscription: Unpin + 'static;
 
     /// Subscribe an event source.
     #[must_use = "Unsubscribe when Subscription is dropped."]
