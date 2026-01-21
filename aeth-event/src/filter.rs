@@ -7,9 +7,9 @@
 //! `filter` and `map_filter` methods
 //! of subscriber trait extension [`crate::SubscriberExt`].
 
+use crate::event::{Ledge, Sub, pubsub};
+use crate::event::{Publisher, Subscriber};
 use crate::handler::Handler;
-use crate::pubsub::{Ledge, Sub, new_pubsub};
-use crate::pubsub::{Publisher, Subscriber};
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::{Rc, Weak};
@@ -134,7 +134,7 @@ where
         match rc {
             Some(result) => result,
             None => {
-                let (filter_pub, filter_sub) = new_pubsub();
+                let (filter_pub, filter_sub) = pubsub();
                 let filter = self.filter.clone();
                 let ledge = self
                     .subscriber

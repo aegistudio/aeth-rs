@@ -30,6 +30,17 @@ use std::task::{Context, Poll, Waker};
 /// trait to be unpinned. Custom
 /// implementors must resolve the pinning
 /// issues internally.
+///
+/// There're mainly three ways of using this
+/// event channel `chan`:
+///
+/// 1. One can simply wait for the event by
+///    [`chan.next().await`](ChannelExt::next).
+/// 2. One can convert the channel into a stream by
+///    [`chan.into_stream()`](ChannelExt::into_stream).
+/// 3. One can multiplex it into a multiplexer
+///    [`mux`](aeth_mux::Mux) with some `key` by
+///    [`mux.mux_chan(key, chan)`](MuxChanExt::mux_chan).
 pub trait Channel<E>: Unpin
 where
     E: Clone + 'static,
@@ -120,6 +131,10 @@ where
     C: Channel<E>,
     M: Muxing,
 {
+    /// Try to poll the next event.
+    ///
+    /// One should generally cope with
+    /// [`aeth_mux::try_poll`].
     pub fn try_poll(&mut self) -> Option<E> {
         self.muxing.acknowledge()?;
 
@@ -133,10 +148,18 @@ where
         }
     }
 
+    /// Consume this muxing channel and
+    /// take the internal channel out.
+    pub fn take(self) -> C {
+        self.chan
+    }
+
+    /// Borrow the inner channel immutably.
     pub fn chan(&self) -> &C {
         &self.chan
     }
 
+    /// Borrow the inner channel mutably.
     pub fn chan_mut(&mut self) -> &mut C {
         &mut self.chan
     }
@@ -154,13 +177,24 @@ where
 /// channel trait to be unpinned. Custom
 /// implementors must resolve the
 /// pinning issue internally.
+///
+/// There're mainly three ways of using this
+/// event channel with guard `wait_chan`:
+///
+/// 1. One can simply wait for the event by
+///    [`wait_chan.next().await`](WaitChannelExt::next).
+/// 2. One can convert the channel into a stream by
+///    [`wait_chan.into_stream()`](WaitChannelExt::into_stream).
+/// 3. One can multiplex it into a multiplexer
+///    [`mux`](aeth_mux::Mux) with some `key` by
+///    [`mux.mux_wait_chan(key, wait_chan)`](MuxChanExt::mux_wait_chan).
 pub trait WaitChannel<E>: Unpin
 where
     E: Clone + 'static,
 {
     type Waiting: Deref<Target = E> + DerefMut + 'static;
 
-    /// Receive the event with guard.
+    /// Fetch the next event with guard.
     fn poll_next_event(&mut self, cx: &mut Context<'_>) -> Poll<Self::Waiting>;
 }
 
@@ -248,6 +282,10 @@ where
     W: WaitChannel<E>,
     M: Muxing,
 {
+    /// Try to poll the next event with guard.
+    ///
+    /// One should generally cope with
+    /// [`aeth_mux::try_poll`].
     pub fn try_poll(&mut self) -> Option<W::Waiting> {
         self.muxing.acknowledge()?;
 
@@ -261,10 +299,18 @@ where
         }
     }
 
+    /// Consume this muxing wait channel and
+    /// take the internal wait channel out.
+    pub fn take(self) -> W {
+        self.wait_chan
+    }
+
+    /// Borrow the inner wait channel immutably.
     pub fn wait_chan(&self) -> &W {
         &self.wait_chan
     }
 
+    /// Borrow the inner wait channel mutably.
     pub fn wait_chan_mut(&mut self) -> &mut W {
         &mut self.wait_chan
     }
@@ -313,6 +359,17 @@ impl<K, T> MuxChanExt<K> for T where T: Multiplexer<K> {}
 /// This object recovers the event handling logic into a
 /// channel polling logic. Now we do event processing in
 /// rust async language.
+///
+/// There're mainly three ways of using this
+/// event channel `chan`:
+///
+/// 1. One can simply wait for the event by
+///    [`chan.next().await`](ChannelExt::next).
+/// 2. One can convert the channel into a stream by
+///    [`chan.into_stream()`](ChannelExt::into_stream).
+/// 3. One can multiplex it into a multiplexer
+///    [`mux`](aeth_mux::Mux) with some `key` by
+///    [`mux.mux_chan(key, chan)`](MuxChanExt::mux_chan).
 pub struct Chan<E>
 where
     E: Clone + 'static,
@@ -392,6 +449,17 @@ where
 /// except for events being protected in
 /// [`Waiting`] barriers, which will
 /// block the publisher until it's dropped.
+///
+/// There're mainly three ways of using this
+/// event channel with guard `wait_chan`:
+///
+/// 1. One can simply wait for the event by
+///    [`wait_chan.next().await`](WaitChannelExt::next).
+/// 2. One can convert the channel into a stream by
+///    [`wait_chan.into_stream()`](WaitChannelExt::into_stream).
+/// 3. One can multiplex it into a multiplexer
+///    [`mux`](aeth_mux::Mux) with some `key` by
+///    [`mux.mux_wait_chan(key, wait_chan)`](MuxChanExt::mux_wait_chan).
 pub struct WaitChan<E> {
     send: UnboundedSender<Waiting<E>>,
     recv: UnboundedReceiver<Waiting<E>>,
@@ -441,8 +509,8 @@ mod test {
     use std::rc::Rc;
 
     use crate::chan::{Chan, WaitChan};
-    use crate::new_pubsub;
     use crate::prelude::*;
+    use crate::pubsub;
     use crate::testutil::TestFixture;
     use aeth_mux::prelude::*;
     use aeth_mux::{Mux, try_poll};
@@ -451,9 +519,9 @@ mod test {
     fn test_normal() {
         let mut fixture = TestFixture::new();
 
-        let (p1, s1) = new_pubsub::<()>();
-        let (p2, s2) = new_pubsub::<usize>();
-        let (p3, s3) = new_pubsub::<()>();
+        let (p1, s1) = pubsub::<()>();
+        let (p2, s2) = pubsub::<usize>();
+        let (p3, s3) = pubsub::<()>();
 
         let v1 = Rc::new(RefCell::new(0usize));
         let v2 = Rc::new(RefCell::new(0usize));

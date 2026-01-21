@@ -1,7 +1,7 @@
 use crate::chan::{Chan, Channel, WaitChan, WaitChannel};
+use crate::event::{Publisher, Subscriber};
 use crate::filter::{FilterPub, FilterSub};
 use crate::handler::Handler;
-use crate::pubsub::{Publisher, Subscriber};
 use futures::future::LocalBoxFuture;
 use std::cell::RefCell;
 use std::marker::PhantomData;

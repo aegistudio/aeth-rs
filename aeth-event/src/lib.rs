@@ -16,9 +16,13 @@
 //!   So that we just need to poll a single
 //!   channel in order to get notified by multiple
 //!   sources. This also recovers the event handling
-//!   logic to channel receiving logic.
+//!   logic to channel receiving logic. For the
+//!   case of creating one [`Chan`] dedicated to
+//!   the [`Sub`], it's also good to see
+//!   [`SubscriberExt::chan`].
 //! - Vertically, with the help of [`aeth_mux::Mux`],
-//!   we can multiplex these channels [`Chan`],
+//!   we can multiplex multiple channels [`Chan`]
+//!   into a single [`aeth_mux::Mux::poll`],
 //!   and discriminate them by associating them
 //!   with a pre-defined key, using
 //!   [`MuxChanExt::mux_chan`].
@@ -31,11 +35,11 @@ pub mod handler;
 pub use handler::Handler;
 
 #[doc(hidden)]
-pub mod pubsub;
+pub mod event;
 #[rustfmt::skip]
-pub use pubsub::{
+pub use event::{
     Publisher, Subscriber,
-    Ledge, Pub, Sub, new_pubsub,
+    Ledge, Pub, Sub, pubsub,
 };
 
 pub mod filter;
@@ -50,9 +54,9 @@ pub use chan::{
 };
 
 #[doc(hidden)]
-pub mod pubsub_ext;
+pub mod event_ext;
 #[rustfmt::skip]
-pub use pubsub_ext::{
+pub use event_ext::{
     PublisherDyn, SubscriberDyn,
     PublisherExt, SubscriberExt,
 };
