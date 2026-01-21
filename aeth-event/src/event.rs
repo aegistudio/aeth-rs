@@ -52,7 +52,14 @@ pub trait Subscriber<E>: Clone + 'static {
     /// Dropping the subscription object
     /// is equivalent to unsubscribing from
     /// the event source.
-    type Subscription: 'static;
+    ///
+    /// The subscription is forced to be
+    /// [`Unpin`] for convenience, since
+    /// all subscription implemented by
+    /// this crate is unpin. Custom
+    /// implementors must resolve the
+    /// pinning issue internally.
+    type Subscription: Unpin + 'static;
 
     /// Subscribe an event source.
     #[must_use = "Unsubscribe when Subscription is dropped."]
@@ -354,7 +361,7 @@ where
 ///
 /// The publisher and subscriber are separate objects
 /// so that they are more dedicated to their roles.
-pub fn new_pubsub<E>() -> (Pub<E>, Sub<E>)
+pub fn pubsub<E>() -> (Pub<E>, Sub<E>)
 where
     E: Clone + 'static,
 {
@@ -365,8 +372,8 @@ where
 
 #[cfg(test)]
 mod test {
+    use crate::event::*;
     use crate::handler::Handler;
-    use crate::pubsub::*;
     use crate::testutil::TestFixture;
     use anyhow::Result;
 
@@ -374,7 +381,7 @@ mod test {
         #[derive(Clone)]
         struct EventSome;
 
-        let (pub_some, sub_some) = new_pubsub::<EventSome>();
+        let (pub_some, sub_some) = pubsub::<EventSome>();
 
         let v1 = Rc::new(RefCell::new(0));
         let mv1 = v1.clone();

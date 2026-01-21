@@ -1,6 +1,6 @@
 use crate::access_winit_active_event_loop::AccessWinitActiveEventLoop;
 use crate::window::{Window, Windows};
-use aeth_event::{Pub, Sub, new_pubsub};
+use aeth_event::{Pub, Sub, pubsub};
 use aeth_task::foreground;
 use futures::channel::oneshot;
 use std::cell::RefCell;
@@ -38,8 +38,8 @@ pub(crate) struct ManagerInner {
 
 impl ManagerInner {
     pub(crate) fn new(windows: Rc<RefCell<Windows>>) -> Self {
-        let (wakeup_event_pub, wakeup_event_sub) = new_pubsub();
-        let (device_event_pub, device_event_sub) = new_pubsub();
+        let (wakeup_event_pub, wakeup_event_sub) = pubsub();
+        let (device_event_pub, device_event_sub) = pubsub();
         Self {
             active_event_loop_jobs: RefCell::new(Vec::new()),
             windows,

@@ -1,164 +1,381 @@
-use crate::mux::ReadyWait;
-use crate::pubsub::{Pub, Sub};
-use crate::{Handler, Subscriber, new_pubsub};
+//! The event channel module.
+//!
+//! Most types in this module have been
+//! exported to the crate root, however
+//! some types are not exported to avoid
+//! confusing the users, and they will
+//! be held here instead.
+
+use crate::{Handler, Subscriber};
+use aeth_mux::{Multiplexer, Muxing};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use futures::channel::oneshot::Sender as OneshotSender;
 use futures::channel::oneshot::channel as oneshot;
-use futures::{SinkExt, StreamExt};
-use std::cell::RefCell;
+use futures::{SinkExt, Stream, StreamExt, ready};
+use pin_project_lite::pin_project;
+use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
-use std::rc::{Rc, Weak};
+use std::pin::Pin;
+use std::task::{Context, Poll, Waker};
 
 /// Event channel trait.
 ///
 /// This trait generalizes the the
 /// receiving behavior of base channel
-/// [`crate::Chan`] and its adapters.
-#[allow(async_fn_in_trait)]
-pub trait Channel<E>
+/// [`Chan`] and its adapters.
+///
+/// The [`Chan`] and its adapters in
+/// this crate are all [`Unpin`]. To
+/// keep it simple, we force the channel
+/// trait to be unpinned. Custom
+/// implementors must resolve the pinning
+/// issues internally.
+///
+/// There're mainly three ways of using this
+/// event channel `chan`:
+///
+/// 1. One can simply wait for the event by
+///    [`chan.next().await`](ChannelExt::next).
+/// 2. One can convert the channel into a stream by
+///    [`chan.into_stream()`](ChannelExt::into_stream).
+/// 3. One can multiplex it into a multiplexer
+///    [`mux`](aeth_mux::Mux) with some `key` by
+///    [`mux.mux_chan(key, chan)`](MuxChanExt::mux_chan).
+pub trait Channel<E>: Unpin
 where
     E: Clone + 'static,
 {
-    /// Receive the event.
-    async fn recv(&mut self) -> E;
+    /// Fetch the next ready event.
+    fn poll_next_event(&mut self, cx: &mut Context<'_>) -> Poll<E>;
+}
 
-    /// Fetch the ready waiter.
-    fn ready_wait(&self) -> Box<dyn ReadyWait>;
+pin_project! {
+    struct ChannelStream<E, C> {
+        chan: C,
+        _phantom: PhantomData<E>,
+    }
+}
+
+impl<E, C> Stream for ChannelStream<E, C>
+where
+    E: Clone + 'static,
+    C: Channel<E>,
+{
+    type Item = E;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.project();
+        Poll::Ready(Some(ready!(this.chan.poll_next_event(cx))))
+    }
+}
+
+/// Event channel trait extension.
+///
+/// This extension aims at providing
+/// some useful interfaces to deal
+/// with the [`Channel`] trait.
+pub trait ChannelExt<E>: Channel<E>
+where
+    E: Clone + 'static,
+{
+    /// Fetch the next event in channel.
+    fn next(&mut self) -> impl Future<Output = E> {
+        std::future::poll_fn(move |cx| self.poll_next_event(cx))
+    }
+
+    /// Turn the channel into a stream
+    /// of event objects.
+    ///
+    /// Please notice this stream is
+    /// never ending, so it's safe to
+    /// invoke `next().await.unwrap()`.
+    fn into_stream(self) -> impl Stream<Item = E>
+    where
+        Self: Sized,
+    {
+        ChannelStream {
+            chan: self,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<E, T> ChannelExt<E> for T
+where
+    E: Clone + 'static,
+    T: Channel<E>,
+{
+}
+
+/// The muxing event channel.
+///
+/// This slot is obtained by wrapping
+/// a channel with a [`aeth_mux::Muxing`],
+/// so that it can be multiplexed into
+/// the corresponding [`aeth_mux::Mux`].
+pub struct MuxingChan<E, C, M>
+where
+    E: Clone + 'static,
+    C: Channel<E>,
+    M: Muxing,
+{
+    chan: C,
+    muxing: M,
+    waker: Waker,
+    _phantom: PhantomData<E>,
+}
+
+impl<E, C, M> MuxingChan<E, C, M>
+where
+    E: Clone + 'static,
+    C: Channel<E>,
+    M: Muxing,
+{
+    /// Try to poll the next event.
+    ///
+    /// One should generally cope with
+    /// [`aeth_mux::try_poll`].
+    pub fn try_poll(&mut self) -> Option<E> {
+        self.muxing.acknowledge()?;
+
+        let mut cx = Context::from_waker(&self.waker);
+        match self.chan.poll_next_event(&mut cx) {
+            Poll::Ready(ready) => {
+                self.waker.wake_by_ref();
+                Some(ready)
+            }
+            Poll::Pending => None,
+        }
+    }
+
+    /// Consume this muxing channel and
+    /// take the internal channel out.
+    pub fn take(self) -> C {
+        self.chan
+    }
+
+    /// Borrow the inner channel immutably.
+    pub fn chan(&self) -> &C {
+        &self.chan
+    }
+
+    /// Borrow the inner channel mutably.
+    pub fn chan_mut(&mut self) -> &mut C {
+        &mut self.chan
+    }
 }
 
 /// Event channel with back-pressure trait.
 ///
 /// This trait generalizes the the
 /// receiving behavior of base channel
-/// [`crate::WaitChan`] and its adapters.
-#[allow(async_fn_in_trait)]
-pub trait WaitChannel<E>
+/// [`WaitChan`] and its adapters.
+///
+/// The [`WaitChan`] and its adapters
+/// in this crate are all [`Unpin`]. To
+/// keep it simple, we force the wait
+/// channel trait to be unpinned. Custom
+/// implementors must resolve the
+/// pinning issue internally.
+///
+/// There're mainly three ways of using this
+/// event channel with guard `wait_chan`:
+///
+/// 1. One can simply wait for the event by
+///    [`wait_chan.next().await`](WaitChannelExt::next).
+/// 2. One can convert the channel into a stream by
+///    [`wait_chan.into_stream()`](WaitChannelExt::into_stream).
+/// 3. One can multiplex it into a multiplexer
+///    [`mux`](aeth_mux::Mux) with some `key` by
+///    [`mux.mux_wait_chan(key, wait_chan)`](MuxChanExt::mux_wait_chan).
+pub trait WaitChannel<E>: Unpin
 where
     E: Clone + 'static,
 {
     type Waiting: Deref<Target = E> + DerefMut + 'static;
 
-    /// Receive the event with guard.
-    async fn recv(&mut self) -> Self::Waiting;
-
-    /// Fetch the ready waiter.
-    fn ready_wait(&self) -> Box<dyn ReadyWait>;
+    /// Fetch the next event with guard.
+    fn poll_next_event(&mut self, cx: &mut Context<'_>) -> Poll<Self::Waiting>;
 }
 
-struct Inner<E>
-where
-    E: 'static,
-{
-    _send: UnboundedSender<E>,
-    recv: UnboundedReceiver<E>,
-    head: Option<E>,
-}
-
-impl<E> Inner<E>
-where
-    E: 'static,
-{
-    fn try_move_head(&mut self) -> Option<()> {
-        let polled = self.recv.try_next().ok()?;
-        self.head = Some(polled?);
-        Some(())
-    }
-
-    fn try_recv_ready(&mut self) -> bool {
-        if self.head.is_none() {
-            self.try_move_head();
-        }
-        self.head.is_some()
-    }
-
-    async fn recv(&mut self) -> E {
-        if let Some(head) = self.head.take() {
-            head
-        } else {
-            // We may use unwrap here, since we hold
-            // one sender as a field of inner, and
-            // the sender will never be closed.
-            self.recv.next().await.unwrap()
-        }
+pin_project! {
+    struct WaitChannelStream<E, W> {
+        wait_chan: W,
+        _phamtom: PhantomData<E>
     }
 }
 
-struct InnerReadyWait<E>
+impl<E, W> Stream for WaitChannelStream<E, W>
 where
-    E: 'static,
+    E: Clone + 'static,
+    W: WaitChannel<E>,
 {
-    rc: Weak<RefCell<Inner<E>>>,
-    sub: Sub<()>,
-}
+    type Item = W::Waiting;
 
-impl<E> ReadyWait for InnerReadyWait<E>
-where
-    E: 'static,
-{
-    fn ready(&self) -> bool {
-        self.rc
-            .upgrade()
-            .map(|inner| inner.borrow_mut().try_recv_ready())
-            .unwrap_or(false)
-    }
-
-    fn waiter(&self) -> Sub<()> {
-        self.sub.clone()
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.project();
+        Poll::Ready(Some(ready!(this.wait_chan.poll_next_event(cx))))
     }
 }
 
-struct ChanBase<E>
+/// Event channel with back-pressure
+/// trait extension.
+///
+/// This extension aims at providing
+/// some useful interfaces to deal
+/// with the [`WaitChannel`] trait.
+pub trait WaitChannelExt<E>: WaitChannel<E>
 where
-    E: 'static,
+    E: Clone + 'static,
 {
-    inner: Rc<RefCell<Inner<E>>>,
-    sender: UnboundedSender<E>,
-    ready_pub: Pub<()>,
-    ready_sub: Sub<()>,
-}
+    /// Fetch the next event with guard.
+    fn next(&mut self) -> impl Future<Output = Self::Waiting> {
+        std::future::poll_fn(move |cx| self.poll_next_event(cx))
+    }
 
-impl<E> ChanBase<E>
-where
-    E: 'static,
-{
-    pub fn new() -> Self {
-        let (ready_pub, ready_sub) = new_pubsub();
-        let (send, recv) = unbounded();
-        let inner = Inner {
-            _send: send.clone(),
-            recv: recv,
-            head: None,
-        };
-        Self {
-            inner: Rc::new(RefCell::new(inner)),
-            sender: send.clone(),
-            ready_pub: ready_pub,
-            ready_sub: ready_sub,
+    /// Turn the channel into a stream
+    /// of events with guards.
+    ///
+    /// Please notice this stream is
+    /// never ending, so it's safe to
+    /// invoke `next().await.unwrap()`.
+    fn into_stream(self) -> impl Stream<Item = Self::Waiting>
+    where
+        Self: Sized,
+    {
+        WaitChannelStream {
+            wait_chan: self,
+            _phamtom: PhantomData,
         }
     }
+}
 
-    pub fn ready_wait(&self) -> Box<dyn ReadyWait> {
-        Box::new(InnerReadyWait {
-            rc: Rc::downgrade(&self.inner),
-            sub: self.ready_sub.clone(),
-        })
+impl<E, T> WaitChannelExt<E> for T
+where
+    E: Clone + 'static,
+    T: WaitChannel<E>,
+{
+}
+
+/// The muxing event channel
+/// with back-pressure.
+///
+/// This slot is obtained by wrapping
+/// a channel with a [`aeth_mux::Muxing`],
+/// so that it can be multiplexed into
+/// the corresponding [`aeth_mux::Mux`].
+pub struct MuxingWaitChan<E, W, M>
+where
+    E: Clone + 'static,
+    W: WaitChannel<E>,
+    M: Muxing,
+{
+    wait_chan: W,
+    muxing: M,
+    waker: Waker,
+    _phantom: PhantomData<E>,
+}
+
+impl<E, W, M> MuxingWaitChan<E, W, M>
+where
+    E: Clone + 'static,
+    W: WaitChannel<E>,
+    M: Muxing,
+{
+    /// Try to poll the next event with guard.
+    ///
+    /// One should generally cope with
+    /// [`aeth_mux::try_poll`].
+    pub fn try_poll(&mut self) -> Option<W::Waiting> {
+        self.muxing.acknowledge()?;
+
+        let mut cx = Context::from_waker(&self.waker);
+        match self.wait_chan.poll_next_event(&mut cx) {
+            Poll::Ready(ready) => {
+                self.waker.wake_by_ref();
+                Some(ready)
+            }
+            Poll::Pending => None,
+        }
     }
 
-    pub async fn recv(&mut self) -> E {
-        self.inner.borrow_mut().recv().await
+    /// Consume this muxing wait channel and
+    /// take the internal wait channel out.
+    pub fn take(self) -> W {
+        self.wait_chan
+    }
+
+    /// Borrow the inner wait channel immutably.
+    pub fn wait_chan(&self) -> &W {
+        &self.wait_chan
+    }
+
+    /// Borrow the inner wait channel mutably.
+    pub fn wait_chan_mut(&mut self) -> &mut W {
+        &mut self.wait_chan
     }
 }
+
+/// Trait extension to multiplex
+/// [`Channel`] and [`WaitChannel`].
+pub trait MuxChanExt<K>: Multiplexer<K> {
+    /// Multiplex an event channel.
+    fn mux_chan<E, C>(&mut self, key: K, chan: C) -> MuxingChan<E, C, Self::Muxing>
+    where
+        E: Clone + 'static,
+        C: Channel<E>,
+    {
+        let (muxing, waker) = self.multiplex(key);
+        waker.wake_by_ref();
+        MuxingChan {
+            chan,
+            muxing,
+            waker,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Multiplex an event channel with backpressure.
+    fn mux_wait_chan<E, W>(&mut self, key: K, wait_chan: W) -> MuxingWaitChan<E, W, Self::Muxing>
+    where
+        E: Clone + 'static,
+        W: WaitChannel<E>,
+    {
+        let (muxing, waker) = self.multiplex(key);
+        waker.wake_by_ref();
+        MuxingWaitChan {
+            wait_chan,
+            muxing,
+            waker,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<K, T> MuxChanExt<K> for T where T: Multiplexer<K> {}
 
 /// Event channel.
 ///
 /// This object recovers the event handling logic into a
 /// channel polling logic. Now we do event processing in
 /// rust async language.
+///
+/// There're mainly three ways of using this
+/// event channel `chan`:
+///
+/// 1. One can simply wait for the event by
+///    [`chan.next().await`](ChannelExt::next).
+/// 2. One can convert the channel into a stream by
+///    [`chan.into_stream()`](ChannelExt::into_stream).
+/// 3. One can multiplex it into a multiplexer
+///    [`mux`](aeth_mux::Mux) with some `key` by
+///    [`mux.mux_chan(key, chan)`](MuxChanExt::mux_chan).
 pub struct Chan<E>
 where
     E: Clone + 'static,
 {
-    base: ChanBase<E>,
+    send: UnboundedSender<E>,
+    recv: UnboundedReceiver<E>,
 }
 
 impl<E> Chan<E>
@@ -166,27 +383,15 @@ where
     E: Clone + 'static,
 {
     pub fn new() -> Self {
-        Self {
-            base: ChanBase::new(),
-        }
-    }
-
-    pub fn ready_wait(&self) -> Box<dyn ReadyWait> {
-        self.base.ready_wait()
-    }
-
-    pub async fn recv(&mut self) -> E {
-        self.base.recv().await
+        let (send, recv) = unbounded();
+        Self { send, recv }
     }
 
     #[must_use = "Unregister when Subscription is dropped."]
     pub async fn connect<S: Subscriber<E>>(&mut self, sub: S) -> S::Subscription {
-        let mut sender = self.base.sender.clone();
-        let ready_pub = self.base.ready_pub.clone();
-        sub.subscribe(Handler::new_async_option(async move |item| {
-            sender.send(item).await.ok()?;
-            ready_pub.publish(()).await;
-            Some(())
+        let mut sender = self.send.clone();
+        sub.subscribe(Handler::new_async(async move |item| {
+            let _ = sender.send(item).await;
         }))
         .await
     }
@@ -196,32 +401,23 @@ impl<E> Channel<E> for Chan<E>
 where
     E: Clone + 'static,
 {
-    async fn recv(&mut self) -> E {
-        Chan::recv(self).await
-    }
-
-    fn ready_wait(&self) -> Box<dyn ReadyWait> {
-        Chan::ready_wait(self)
+    fn poll_next_event(&mut self, cx: &mut Context<'_>) -> Poll<E> {
+        // XXX: Yes, the channel must be a never ending stream.
+        Poll::Ready(ready!(self.recv.poll_next_unpin(cx)).unwrap())
     }
 }
 
 /// Back-pressure guarded event.
 ///
-/// This is returned [`crate::WaitChan::recv`],
+/// This is returned by polling [`WaitChan`],
 /// for blocking the event publisher until
 /// the back-pressure guard is dropped.
-pub struct Waiting<E>
-where
-    E: Clone + 'static,
-{
+pub struct Waiting<E> {
     event: E,
     done: Option<OneshotSender<()>>,
 }
 
-impl<E> Drop for Waiting<E>
-where
-    E: Clone + 'static,
-{
+impl<E> Drop for Waiting<E> {
     fn drop(&mut self) {
         let _ = self.done.take().unwrap().send(());
     }
@@ -249,15 +445,24 @@ where
 
 /// Event channel with back-pressure.
 ///
-/// It's totally like [`crate::Chan`],
+/// It's totally like [`Chan`],
 /// except for events being protected in
-/// [`crate::Waiting`] barriers, which will
+/// [`Waiting`] barriers, which will
 /// block the publisher until it's dropped.
-pub struct WaitChan<E>
-where
-    E: Clone + 'static,
-{
-    base: ChanBase<Waiting<E>>,
+///
+/// There're mainly three ways of using this
+/// event channel with guard `wait_chan`:
+///
+/// 1. One can simply wait for the event by
+///    [`wait_chan.next().await`](WaitChannelExt::next).
+/// 2. One can convert the channel into a stream by
+///    [`wait_chan.into_stream()`](WaitChannelExt::into_stream).
+/// 3. One can multiplex it into a multiplexer
+///    [`mux`](aeth_mux::Mux) with some `key` by
+///    [`mux.mux_wait_chan(key, wait_chan)`](MuxChanExt::mux_wait_chan).
+pub struct WaitChan<E> {
+    send: UnboundedSender<Waiting<E>>,
+    recv: UnboundedReceiver<Waiting<E>>,
 }
 
 impl<E> WaitChan<E>
@@ -265,23 +470,13 @@ where
     E: Clone + 'static,
 {
     pub fn new() -> Self {
-        Self {
-            base: ChanBase::new(),
-        }
-    }
-
-    pub fn ready_wait(&self) -> Box<dyn ReadyWait> {
-        self.base.ready_wait()
-    }
-
-    pub async fn recv(&mut self) -> Waiting<E> {
-        self.base.recv().await
+        let (send, recv) = unbounded();
+        Self { send, recv }
     }
 
     #[must_use = "Unregister when Subscription is dropped."]
     pub async fn connect<S: Subscriber<E>>(&mut self, sub: S) -> S::Subscription {
-        let mut sender = self.base.sender.clone();
-        let ready_pub = self.base.ready_pub.clone();
+        let mut sender = self.send.clone();
         sub.subscribe(Handler::new_async_option(async move |event| {
             let (waiting_pub, waiting_sub) = oneshot();
             let item = Waiting {
@@ -289,7 +484,6 @@ where
                 done: Some(waiting_pub),
             };
             sender.send(item).await.ok()?;
-            ready_pub.publish(()).await;
             let _ = waiting_sub.await;
             Some(())
         }))
@@ -303,12 +497,9 @@ where
 {
     type Waiting = Waiting<E>;
 
-    async fn recv(&mut self) -> Waiting<E> {
-        WaitChan::recv(self).await
-    }
-
-    fn ready_wait(&self) -> Box<dyn ReadyWait> {
-        WaitChan::ready_wait(self)
+    fn poll_next_event(&mut self, cx: &mut Context<'_>) -> Poll<Self::Waiting> {
+        // XXX: Again, never ending stream of events.
+        Poll::Ready(ready!(self.recv.poll_next_unpin(cx)).unwrap())
     }
 }
 
@@ -317,17 +508,20 @@ mod test {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use crate::chan::Chan;
+    use crate::chan::{Chan, WaitChan};
+    use crate::prelude::*;
+    use crate::pubsub;
     use crate::testutil::TestFixture;
-    use crate::{Mux, new_pubsub};
+    use aeth_mux::prelude::*;
+    use aeth_mux::{Mux, try_poll};
 
     #[test]
     fn test_normal() {
         let mut fixture = TestFixture::new();
 
-        let (p1, s1) = new_pubsub::<()>();
-        let (p2, s2) = new_pubsub::<usize>();
-        let (p3, s3) = new_pubsub::<()>();
+        let (p1, s1) = pubsub::<()>();
+        let (p2, s2) = pubsub::<usize>();
+        let (p3, s3) = pubsub::<()>();
 
         let v1 = Rc::new(RefCell::new(0usize));
         let v2 = Rc::new(RefCell::new(0usize));
@@ -348,40 +542,40 @@ mod test {
 
             let mut ch1: Chan<()> = Chan::new();
             let _l1 = ch1.connect(s1).await;
-            let _m1 = mux.mux(ch1.ready_wait(), Branch::Ch1).await;
+            let mut ch1 = mux.mux_stream(Branch::Ch1, ch1.into_stream());
 
-            let mut ch2: Chan<usize> = Chan::new();
-            let _l2 = ch2.connect(s2.clone()).await;
-            let _m2 = mux.mux(ch2.ready_wait(), Branch::Ch2).await;
+            let ch2: Chan<usize> = Chan::new();
+            let mut ch2 = mux.mux_chan(Branch::Ch2, ch2);
+            let _l2 = ch2.chan_mut().connect(s2.clone()).await;
 
-            let mut ch3: Chan<usize> = Chan::new();
+            let mut ch3: WaitChan<usize> = WaitChan::new();
             let l3 = ch3.connect(s2.clone()).await;
             let mut l3 = Some(l3);
-            let m3 = mux.mux(ch3.ready_wait(), Branch::Ch3).await;
-            let mut m3 = Some(m3);
+            let ch3 = mux.mux_wait_chan(Branch::Ch3, ch3);
+            let mut ch3 = Some(ch3);
 
-            let mut ch4: Chan<()> = Chan::new();
+            let mut ch4: WaitChan<()> = WaitChan::new();
             let _l4 = ch4.connect(s3.clone()).await;
-            let _m4 = mux.mux(ch4.ready_wait(), Branch::Ch4).await;
+            let mut ch4 = mux.mux_stream(Branch::Ch4, ch4.into_stream());
 
             loop {
                 match mux.poll().await {
                     Branch::Ch1 => {
-                        ch1.recv().await;
+                        try_poll!(ch1);
                         *v1l.borrow_mut() += 1;
                     }
                     Branch::Ch2 => {
-                        let d = ch2.recv().await;
+                        let d = try_poll!(ch2);
                         *v2l.borrow_mut() += d;
                     }
                     Branch::Ch3 => {
-                        let d = ch3.recv().await;
-                        *v3l.borrow_mut() += d;
+                        let d = try_poll!(ch3.as_mut().unwrap());
+                        *v3l.borrow_mut() += *d;
                     }
                     Branch::Ch4 => {
-                        ch4.recv().await;
+                        let _guard = try_poll!(ch4);
                         std::mem::drop(l3.take());
-                        std::mem::drop(m3.take());
+                        std::mem::drop(ch3.take());
                     }
                 }
             }

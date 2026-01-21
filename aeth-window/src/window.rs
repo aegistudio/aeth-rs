@@ -1,5 +1,5 @@
 use crate::access_winit_window::AccessWinitWindow;
-use aeth_event::{Pub, Sub, new_pubsub};
+use aeth_event::{Pub, Sub, pubsub};
 use indexed_bitmap::IndexedBitmap;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -87,7 +87,7 @@ impl Windows {
         let win_id = window.id();
         let slot_id = this.windows.len();
         let slot_id = Rc::new(RefCell::new(slot_id));
-        let (window_event_pub, window_event_sub) = new_pubsub();
+        let (window_event_pub, window_event_sub) = pubsub();
         this.windows.push(WindowInner {
             window,
             window_event_pub,

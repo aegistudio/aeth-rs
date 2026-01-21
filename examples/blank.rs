@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
 
     let mut window_event_ch = window.window_event_sub().chan().await;
     loop {
-        let event = window_event_ch.recv().await;
+        let event = window_event_ch.next().await;
         println!("Receiving window event: {event:?}");
         match event {
             WindowEvent::CloseRequested => return Ok(()),
